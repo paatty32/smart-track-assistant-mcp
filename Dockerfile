@@ -10,4 +10,4 @@ COPY . .
 
 EXPOSE 8000
 
-CMD ["python", "open_meteo_mcp_server.py"]
+CMD ["python", "mcp_server.py"]
