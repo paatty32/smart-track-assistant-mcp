@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import date
 
@@ -7,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlmodel import SQLModel
 
 from domain.TrainingPlan import TrainingPlan
 from domain.TrainingPlanCreate import TrainingPlanCreate
@@ -37,6 +39,25 @@ logger = logging.getLogger(__name__)
 def getWeather():
     response = httpx.get(URL, params=params)
     return response.text
+
+#async def create_db_and_tables_with_retry(max_retries=10, delay=2):
+#    for attempt in range(max_retries):
+ #       try:
+ #           async with enginne.begin() as conn:
+ #               await conn.run_sync(SQLModel.metadata.create_all)
+  #          print("Tabellen erfolgreich erstellt!")
+  #          return
+   #     except OperationalError:
+    #        print(f"Verbindung zur DB fehlgeschlagen, Versuch {attempt+1}/{max_retries}")
+     #       time.sleep(delay)
+    #raise Exception("Konnte keine Verbindung zur Datenbank herstellen.")
+
+async def create_db_and_tables():
+    #TODO: Retries einbauen
+    async with enginne.begin() as conn:
+        logger.info("DATABASE TABLE - START")
+        await conn.run_sync(SQLModel.metadata.create_all)
+        logger.info("DATABASE TABLE - ENDE")
 
 async def insert_training_plan(session: AsyncSession, training_plan: TrainingPlanCreate, fingerprint: str):
     plan = TrainingPlan(**training_plan.model_dump(), fingerprint=fingerprint)
@@ -77,6 +98,7 @@ async def create_training_plan(
     return plan.model_dump()
 
 #TODO: tool bennen
+#TODO: tools beschreiben
 @weather_mcp.tool()
 def getWeatherTool():
     return getWeather()
@@ -126,6 +148,9 @@ async def insertTrainingPlan( datum: date,
             raise
 
 def main():
+    #Tabelle erstellen
+    asyncio.run(create_db_and_tables())
+
     weather_mcp.run(transport="streamable-http")
 if __name__ == "__main__":
     main()
