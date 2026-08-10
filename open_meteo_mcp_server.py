@@ -28,36 +28,33 @@ params = {
 DATABASE_URL = "postgresql+asyncpg://user:password@db:5432/smartAssistantDb"
 
 enginne = create_async_engine(DATABASE_URL, echo=True)
-
 #Async Session Factory
 async_session = async_sessionmaker(enginne, class_=AsyncSession, expire_on_commit=False)
 
 weather_mcp = FastMCP("weather", host="0.0.0.0", port=8000)
 
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 def getWeather():
     response = httpx.get(URL, params=params)
     return response.text
 
-#async def create_db_and_tables_with_retry(max_retries=10, delay=2):
-#    for attempt in range(max_retries):
- #       try:
- #           async with enginne.begin() as conn:
- #               await conn.run_sync(SQLModel.metadata.create_all)
-  #          print("Tabellen erfolgreich erstellt!")
-  #          return
-   #     except OperationalError:
-    #        print(f"Verbindung zur DB fehlgeschlagen, Versuch {attempt+1}/{max_retries}")
-     #       time.sleep(delay)
-    #raise Exception("Konnte keine Verbindung zur Datenbank herstellen.")
+async def create_db_and_tables_with_retry(max_retries=10, delay=2):
+    for attempt in range(max_retries):
+        try:
+            async with enginne.begin() as conn:
+                await conn.run_sync(SQLModel.metadata.create_all)
+                logger.info("Tabellen erfolgreich erstellt!")
+            return
+        except Exception as e:
+            logger.warning(f"Verbindung zur DB fehlgeschlagen, Versuch {attempt+1}/{max_retries}. Grund: {e}")
+            await asyncio.sleep(delay)
+    raise Exception("Konnte keine Verbindung zur Datenbank herstellen.")
 
-async def create_db_and_tables():
-    #TODO: Retries einbauen
-    async with enginne.begin() as conn:
-        logger.info("DATABASE TABLE - START")
-        await conn.run_sync(SQLModel.metadata.create_all)
-        logger.info("DATABASE TABLE - ENDE")
+async def set_up_database():
+    await create_db_and_tables_with_retry()
+    await enginne.dispose()
 
 async def insert_training_plan(session: AsyncSession, training_plan: TrainingPlanCreate, fingerprint: str):
     plan = TrainingPlan(**training_plan.model_dump(), fingerprint=fingerprint)
@@ -149,7 +146,7 @@ async def insertTrainingPlan( datum: date,
 
 def main():
     #Tabelle erstellen
-    asyncio.run(create_db_and_tables())
+    asyncio.run(set_up_database())
 
     weather_mcp.run(transport="streamable-http")
 if __name__ == "__main__":
