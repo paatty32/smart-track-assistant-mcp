@@ -12,4 +12,4 @@ COPY . .
 
 EXPOSE 8000
 
-CMD ["/wait-for-it.sh", "db:5432", "--", "python", "open_meteo_mcp_server.py"]
+CMD ["/wait-for-it.sh", "db:5432", "--", "python", "mcp_server.py"]
