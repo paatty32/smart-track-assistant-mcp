@@ -27,11 +27,11 @@ params = {
 
 DATABASE_URL = "postgresql+asyncpg://user:password@db:5432/smartAssistantDb"
 
-enginne = create_async_engine(DATABASE_URL, echo=True)
+engine = create_async_engine(DATABASE_URL, echo=True)
 #Async Session Factory
-async_session = async_sessionmaker(enginne, class_=AsyncSession, expire_on_commit=False)
+async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-weather_mcp = FastMCP("weather", host="0.0.0.0", port=8000)
+training_mcp = FastMCP("training_plan", host="0.0.0.0", port=8000)
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -43,7 +43,7 @@ def getWeather():
 async def create_db_and_tables_with_retry(max_retries=10, delay=2):
     for attempt in range(max_retries):
         try:
-            async with enginne.begin() as conn:
+            async with engine.begin() as conn:
                 await conn.run_sync(SQLModel.metadata.create_all)
                 logger.info("Tabellen erfolgreich erstellt!")
             return
@@ -54,7 +54,7 @@ async def create_db_and_tables_with_retry(max_retries=10, delay=2):
 
 async def set_up_database():
     await create_db_and_tables_with_retry()
-    await enginne.dispose()
+    await engine.dispose()
 
 async def insert_training_plan(session: AsyncSession, training_plan: TrainingPlanCreate, fingerprint: str):
     plan = TrainingPlan(**training_plan.model_dump(), fingerprint=fingerprint)
@@ -94,17 +94,23 @@ async def create_training_plan(
     logger.info(f"Plan model dump {plan.model_dump()}")
     return plan.model_dump()
 
-#TODO: tool bennen
-#TODO: tools beschreiben
-@weather_mcp.tool()
+@training_mcp.tool(
+    name="get_weather_data",
+    description="Holt die Wetter Daten für einen angegebenen Ort anhand"
+)
 def getWeatherTool():
     return getWeather()
 
-@weather_mcp.tool()
-async def createTrainingPlan(datum: date,
+@training_mcp.tool(
+    name="create_plan",
+    description="Erstellt einen Trainingsplan mit den gegebenen Informationen"
+)
+async def createTrainingPlan(
+        datum: date,
         wetter: str,
         aufwaermen: str,
-        hauptteil: str):
+        hauptteil: str
+):
 
     return await create_training_plan(
         datum=datum,
@@ -112,13 +118,12 @@ async def createTrainingPlan(datum: date,
         aufwaermen=aufwaermen,
         hauptteil=hauptteil,)
 
-@weather_mcp.tool(name="insertTrainingPlan")
-async def insertTrainingPlan( datum: date,
-                              wetter: str,
-                              aufwaermen: str,
-                              hauptteil: str):
-    logger.info(f"Start inserting training plan Datum: {datum}, Wetter: {wetter}, aufwaermen: {aufwaermen},hauptteil: {hauptteil}")
-    training_plan = TrainingPlanCreate(datum=datum, wetter=wetter, aufwaermen=aufwaermen, hauptteil=hauptteil)
+@training_mcp.tool(
+    name="insert_plan",
+    description="Fügt einen Trainingsplan in die Datenbank ein mit einem einzigartigen Fingerprint")
+async def insertTrainingPlan(plan: TrainingPlanCreate):
+    logger.info(f"Start inserting training plan Datum: {plan.datum}, Wetter: {plan.wetter}, aufwaermen: {plan.aufwaermen},hauptteil: {plan.hauptteil}")
+    training_plan = plan
 
     logger.info(f"Plan erstellt {training_plan}")
 
@@ -148,6 +153,6 @@ def main():
     #Tabelle erstellen
     asyncio.run(set_up_database())
 
-    weather_mcp.run(transport="streamable-http")
+    training_mcp.run(transport="streamable-http")
 if __name__ == "__main__":
     main()
