@@ -36,46 +36,34 @@ training_mcp = FastMCP("training_plan", host="0.0.0.0", port=8000)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+@training_mcp.tool(
+    name="get_weather_data",
+    description="Holt die Wetter Daten für einen angegebenen Ort anhand"
+)
+def getWeatherTool():
+    return getWeather()
+
 def getWeather():
     response = httpx.get(URL, params=params)
     return response.text
 
-async def create_db_and_tables_with_retry(max_retries=10, delay=2):
-    for attempt in range(max_retries):
-        try:
-            async with engine.begin() as conn:
-                await conn.run_sync(SQLModel.metadata.create_all)
-                logger.info("Tabellen erfolgreich erstellt!")
-            return
-        except Exception as e:
-            logger.warning(f"Verbindung zur DB fehlgeschlagen, Versuch {attempt+1}/{max_retries}. Grund: {e}")
-            await asyncio.sleep(delay)
-    raise Exception("Konnte keine Verbindung zur Datenbank herstellen.")
 
-async def set_up_database():
-    await create_db_and_tables_with_retry()
-    await engine.dispose()
+@training_mcp.tool(
+    name="create_plan",
+    description="Erstellt einen Trainingsplan mit den gegebenen Informationen"
+)
+async def createTrainingPlan(
+        datum: date,
+        wetter: str,
+        aufwaermen: str,
+        hauptteil: str
+):
 
-async def insert_training_plan(session: AsyncSession, training_plan: TrainingPlanCreate, fingerprint: str):
-    plan = TrainingPlan(**training_plan.model_dump(), fingerprint=fingerprint)
-    logger.info(f"Plan to add {plan}")
-    session.add(plan)
-    try:
-        await session.commit()
-    except IntegrityError:
-        await session.rollback()
-        existing = await session.scalar(select(TrainingPlan).where(TrainingPlan.fingerprint == fingerprint))
-        return {
-            "status": "already_exists",
-            "id": existing.id
-        }
-    logger.info(f"End inserting training plan {training_plan}")
-    await session.refresh(plan)
-    return {
-        "id": plan.id,
-        "status": "created",
-    }
-
+    return await create_training_plan(
+        datum=datum,
+        wetter=wetter,
+        aufwaermen=aufwaermen,
+        hauptteil=hauptteil)
 
 async def create_training_plan(
         datum: date,
@@ -94,29 +82,6 @@ async def create_training_plan(
     logger.info(f"Plan model dump {plan.model_dump()}")
     return plan.model_dump()
 
-@training_mcp.tool(
-    name="get_weather_data",
-    description="Holt die Wetter Daten für einen angegebenen Ort anhand"
-)
-def getWeatherTool():
-    return getWeather()
-
-@training_mcp.tool(
-    name="create_plan",
-    description="Erstellt einen Trainingsplan mit den gegebenen Informationen"
-)
-async def createTrainingPlan(
-        datum: date,
-        wetter: str,
-        aufwaermen: str,
-        hauptteil: str
-):
-
-    return await create_training_plan(
-        datum=datum,
-        wetter=wetter,
-        aufwaermen=aufwaermen,
-        hauptteil=hauptteil,)
 
 @training_mcp.tool(
     name="insert_plan",
@@ -148,6 +113,42 @@ async def insertTrainingPlan(plan: TrainingPlanCreate):
         except Exception:
             await session.rollback()
             raise
+
+async def insert_training_plan(session: AsyncSession, training_plan: TrainingPlanCreate, fingerprint: str):
+    plan = TrainingPlan(**training_plan.model_dump(), fingerprint=fingerprint)
+    logger.info(f"Plan to add {plan}")
+    session.add(plan)
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        existing = await session.scalar(select(TrainingPlan).where(TrainingPlan.fingerprint == fingerprint))
+        return {
+            "status": "already_exists",
+            "id": existing.id
+        }
+    logger.info(f"End inserting training plan {training_plan}")
+    await session.refresh(plan)
+    return {
+        "id": plan.id,
+        "status": "created",
+    }
+
+async def set_up_database():
+    await create_db_and_tables_with_retry()
+    await engine.dispose()
+
+async def create_db_and_tables_with_retry(max_retries=10, delay=2):
+    for attempt in range(max_retries):
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(SQLModel.metadata.create_all)
+                logger.info("Tabellen erfolgreich erstellt!")
+            return
+        except Exception as e:
+            logger.warning(f"Verbindung zur DB fehlgeschlagen, Versuch {attempt+1}/{max_retries}. Grund: {e}")
+            await asyncio.sleep(delay)
+    raise Exception("Konnte keine Verbindung zur Datenbank herstellen.")
 
 def main():
     #Tabelle erstellen
